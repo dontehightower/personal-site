@@ -1,0 +1,154 @@
+# Server Side GraphQL with `graphql-yoga` and Prisma.
+
+Prisma does not provide a authentication, security, or server-side logic like:
+
+- Collecting Payments
+- Sending Email
+- JWT authentication
+- Permission checking
+
+### Connecting to the Database
+
+The `prisma-binding` library allows JS bindings to prisma database. In `db.js` bind the server to the database:
+
+```javascript
+const db = new Prisma({
+  typeDefs: "src/generated/prisma.graphql",
+  endpoint: process.env.PRISMA_ENDPOINT,
+  secret: process.env.PRISMA_SECRET,
+  debug: false,
+})
+```
+
+- `typeDefs`: refers to the location of your prisma generated graphql typeDefs.
+- `endpoint`: your graphql endpoint
+- `secret`: self explanatory
+- `debug`: ???
+
+### Server Setup
+
+Note for this setup we have two GraphQL Servers:
+
+- Prisma
+  - generates code that will be used to interact with DB
+- GraphQL Yoga
+  - handles middleware, server-logic, interacts with client
+
+##### GraphQL Yoga
+
+- What is it?
+
+GraphQL Yoga is built by Prisma and can be thought of as a competitor to Apollo Server. Since the release of Apollo Server 2 in July 2018, the GraphQL community seems to have come to the conclusion that believe Apollo Server is a better choice for most development teams.
+
+Initially, GraphQL Yoga supported a number of features out-of-the-box that were left out of Apollo Server v1, such as:
+
+- GraphQL Subscriptions
+- File uploads
+- Improved developer experience via simplified setup, error formatting, etc.
+
+However, Apollo Server v2 built on top of the success of GraphQL Yoga and implemented the above features into Apollo Server, while maintaining a similar API. The remaining benefits of GraphQL Yoga (extensibility via express middleware, graphql imports and query deduplication) can be accounted for using the following packages alongside Apollo Server:
+
+- [`apollo-server-express`](https://github.com/apollographql/apollo-server/tree/master/packages/apollo-server-express)
+
+- `graphql-import` - https://github.com/Urigo/graphql-import
+- `graphql-deduplicator`
+
+https://blog.apollographql.com/announcing-apollo-server-2-2b69fb4702ce
+https://github.com/prisma-labs/graphql-yoga/issues/382#issuecomment-408390953
+
+- What will it do?
+
+GraphQL Yoga will be where we perform business logic in our applications. Specifically, for this application, we send emails, authenticate users with JSON web tokens, check permissions of those users, and collect payment.
+
+- Why can't we just do these things with Prisma?
+
+Prisma and GraphQL Yoga are libraries that seek to perform seperate services. Prisma functions as a data-layer by communicating with the SQL, PostgreSQL, or MongodDB databases in the place of a traditional ORM. It generates optimized database queries based on Prisma client requests, and allows the performance of CRUD applications with Javascript & Typescript(also supports Flow and Go), using the ES7 features like async/await.
+
+GraphQL Yoga is, as mentioned above, a place to perform business logic and communicate with the client-side of our application.
+
+###### Writing Queries and Mutations
+
+1. Edit datamodel
+2. Deploy datamodel to Prisma using the prisma CLI tool to run `prisma deploy`.
+3. Edit `src/schema.graphql` and write a query.
+4. Write your resolver in `src/resolvers/Query.js` or `src/resolvers/Mutations.js`
+
+###### Editing the datamodel
+
+1. Add the new type to `datamodel.prisma` or `datamodel.graphql`. In this case a new item
+
+```graphql
+type Item {
+  id: ID! @id
+  title: String!
+  description: String!
+  image: String
+  largeImage: String
+  price: Int!
+  createdAt: DateTime! @createdAt
+  updatedAt: DateTime! @updatedAt
+}
+```
+
+2. Deploy your datamodel to the Prisma server by running `npm run deploy`.
+
+3a. Edit your `src/schema.graphql` so that it includes the new type defined in `prisma.graphql`.
+
+-- `graphql-import` allows us to import types defined in the generated prisma.graphql file, and use them in our `schema.graphql` file as they are referenced.
+
+```graphql
+# import * from './generated/prisma.graphql'
+
+type Mutation {
+  createItem(
+    title: String
+    description: String
+    price: Int
+    image: String
+    largeImage: String
+  ): Item!
+}
+
+type Query {
+  items: [Item]!
+}
+```
+
+4. Write your resolvers in `resolvers/Query.js` and `resolvers.Mutation.js` respectively.
+
+resolvers/Query.js
+
+```graphql
+const Query = {
+  items: async (parent, args, ctx, info) => {
+    const items = ctx.db.query.items();
+    return items;
+  }
+};
+```
+
+OR you can use Prisma's `forwardTo` function to skip writing custom resolvers. Like this:
+
+```graphql
+const Query = {
+  items: forwardTo('db')
+};
+```
+
+resolvers/Mutation.js
+
+```graphql
+const Mutations = {
+  createItem: async (parent, args, ctx, info) => {
+    const item = await ctx.db.mutation.createItem(
+      {
+        data: {
+          ...args
+        }
+      },
+      info
+    );
+    return item;
+  }
+};
+```
