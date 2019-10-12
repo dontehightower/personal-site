@@ -1,0 +1,54 @@
+#### Read - useQuery to Read Items
+
+The basic formula is as follows:
+
+Write a Query using `graphql-tag`'s `gql` function. `gql` wraps a javascript string, and translates it into GraphQL(remember that's Graph Query **Language**) using an AST. Then pass that `gql` query into Apollo Client's `useQuery` hook, and return different markup from your component based on whether the resulting payload contains `loading`, `error`, or `data`.
+
+###### Querying for All Items
+
+1. Define the Query
+
+```javascript
+export const ALL_ITEMS_QUERY = gql`
+  query ALL_ITEMS_QUERY {
+    items {
+      id
+      title
+      price
+      description
+      image
+      largeImage
+    }
+  }
+`
+```
+
+Aside for learning what an AST is: https://medium.com/basecs/leveling-up-ones-parsing-game-with-asts-d7a6fc2400ff
+
+2. Pass that `ALL_ITEMS_QUERY` to Apollo Client's `useQuery` hook, and use ES6 destructuring to get the `loading`, `error`, and `data` properties from the resulting payload.
+
+```javascript
+const { loading, error, data } = useQuery(ALL_ITEMS_QUERY)
+```
+
+3. Return different HTML based on whether the payload has returned a **loading**, **error**, or **data** object.
+
+```javascript
+const Items = () => {
+  const { loading, error, data } = useQuery(ALL_ITEMS_QUERY)
+  if (loading) return <div>Loading...</div>
+  if (error) return <div>{error.message}</div>
+  console.log(data)
+  return (
+    <Center>
+      <p>Items</p>
+      <p>It worked {data.items.length} items found!</p>
+      <ItemsList>
+        {data.items.map(item => (
+          <Item item={item} key={item.id} />
+        ))}
+      </ItemsList>
+    </Center>
+  )
+}
+```

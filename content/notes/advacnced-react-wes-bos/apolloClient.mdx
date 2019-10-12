@@ -1,0 +1,399 @@
+# Apollo Client
+
+Apollo Client is a local state managemnet library that also performs data fetching & caching. It is the most popular library for working with GraphQL on the client-side.
+
+## Apollo Boost
+
+Includes packages that are essential for using Apollo Client. It includes:
+
+- a client for interacting with the graphql server and performing GraphQL operations - `apollo-client`
+- a cache - `apollo-cache-inmemory`
+- a remote data fetching library - `apollo-link-http`
+- an error handling library - `apollo-link-error`
+- a local state managemnet library - `apollo-link-state`
+- a library for defining graphql **types**, **Queries**, and **Mutations** - `graphql-tag`
+
+Apollo Boost includes these libraries and pre-configures them, exposing a small number of optional parameters. As applications grow in size, you can include each of the links/libraries listed above and configure them yourself.
+
+## CRUD (Create Update Read Destroy) with Apollo Client
+
+CRUD operations are at the heart of many applications. This is made easy in Apollo Client with `useQuery` and `useMutation`. `useQuery` is the Apollo Client hook for performing Read operations on the client side. It exposes a React interface for performing GraphQL Queries. `useMutation` is The Apollo Client hook for performing Create, Update, AND Delete operations in Apollo Client
+
+---
+
+#### Create - useMutation to Create Items
+
+###### Aside: Forms in React
+
+Greatly simplified with the `useReducer` hook. Destructure `formState`, and `setFormState` from `useReducer`. The first parameter for `useReducer` is a the state updater function. The second parameter to `useReducer` is an object that defines the inital value of `formState`.
+
+```javascript
+const [formState, setFormState] = useReducer(
+  (state, action) => ({ ...state, ...action }),
+  {
+    title: "Testing the Form",
+    description: "Testing the Form",
+    image: "",
+    largeImage: "",
+    price: 100,
+  }
+)
+```
+
+> The `handleChange` function follows a similar pattern to previous versions of React. It calls the `setFormState` function destructured from our `useReducer` hook, and uses [computed property names](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Object_initializer#Computed_property_names) to update the appropriate property of `formState` with the new value. This allows us to use a single `handleChange` function for all form inputs.
+
+```javascript
+const handleChange = e => {
+  const { name, type, value } = e.target
+  const val = type === "number" ? parseFloat(value) : value
+  // handleChange call setFormState, changing the value of the formState
+  // Object so that the new value will equal the previousValue, but with the /// selected field's(see [name]) value changed based on userInput(see val)
+  setFormState({ ...formState, [name]: val })
+}
+```
+
+###### Creating Items
+
+Write a Query using `graphql-tag`'s `gql` function. `gql` wraps a javascript string, and translates it into GraphQL(remember that's Graph Query **Language**) using an AST. Then pass that `gql` query into Apollo Client's `useMutation` hook, and return different markup from your component based on whether the resulting payload contains `loading`, `error`, or `data`. We then take our `formState` object defined above and use it to call the `createItem` function
+
+1. Define the Mutation
+
+- Define the variable in JavaScript
+- Names the mutation for the AST, and lists the variables that will be passed into it, and their value types.
+- Exposes those variables to our `createItem` Mutation on the backend.
+- Ask for some data back after the Mutation is complete.
+
+```javascript
+export const CREATE_ITEM_MUTATION = gql`
+  mutation CREATE_ITEM_MUTATION(
+    $title: String!
+    $description: String!
+    $price: Int!
+    $image: String
+    $largeImage: String!
+  ) {
+    createItem(
+      title: $title
+      description: $description
+      price: $price
+      image: $image
+      largeImage: $largeImage
+    ) {
+      id
+    }
+  }
+`
+```
+
+2. Pass the `CREATE_ITEM_MUTATION` to Apollo Client's `useMutation` hook.
+
+2a. Destructure the `createItem` function from that hook, so we can call that function as a part of our `handleSubmit` function.
+
+2b. Use ES6 named parameter destructuring to re-name the `loading`, `error`, and `data` properties returned from `useMutation`'s payload'.
+
+```javascript
+const [
+  createItem,
+  { loading: createItemLoading, error: createItemError, data },
+] = useMutation(CREATE_ITEM_MUTATION)
+```
+
+3. Call `createItem` in the form submission handler, `handleSubmit`.
+
+```javascript
+const handleSubmit = async e => {
+  e.preventDefault()
+  const res = await createItem({ variables: { ...formState } })
+  // you can also perform re-directs, or call other helper functions here, as a
+  // part of your form submission handler
+}
+```
+
+---
+
+#### Update - useMutation to Update Items
+
+Mini-Boss: To create a UI for updating Items, we need to write a Query called `item`, that returns a single item, and a new Mutation called `updateItem` for updating item that item.
+
+To the `backend`!:
+
+###### A Single Item Query
+
+In `src/schema.graphql`, define a new Query that allows us to look up a single item, and a corresponding resolver:
+
+`item` takes a single parameter, `ItemWhereUniqueInput`, which we borrow from prisma's generated schema, it can be found in `/generated/prisma.graphql`
+
+```graphql
+type Query {
+  # added this line to old code
+  item(where: ItemWhereUniqueInput!): Item
+}
+```
+
+Our resolver for this query will use prisma-bindings's `forwardTo` function to delegate the query's execution to resolvers(generated by prisma) with the same name.The flow of execution looks something like this:
+
+- Our Schema -> Our Resolver -> Prisma Generated Schema **easily readable** -> Prisma Generated Resolvers _presumably harder to read_\*, -> DB
+
+-- The resolvers generated by prisma are the "magic" here. They are generated functions that are instructed to look at various locations of the database to return the requested data. Even if they are not harder to read, that's not the point. The point is `forwardTo("db")` says: "Look in our prisma service for the generated resolver, or set of generated resolvers necessary to resolve this query".
+
+```javascript
+const Query = {
+  // added this line to old code
+  item: forwardTo("db"),
+}
+```
+
+###### An updateItem Mutation
+
+Define Mutation in the `schema.graphql`
+
+```graphql
+type Mutation {
+  # createItem is up here
+  updateItem(id: ID!, title: String, description: String, price: Int): Item!
+}
+```
+
+Write a resolver for that mutation in `src/resolvers/Mutation.js`
+All the methods in our generated `prisma.graphql` API are exposed on `ctx.db`
+Query methods are on `ctx.db.query` Mutations methods are on `ctx.db.mutation`.
+
+```javascript
+const Mutations = {
+  // createItem code is up here...
+  updateItem: async (parent, args, ctx, info) => {
+    // take a copy of the updates
+    const updates = { ...args }
+    // remove the ID from the updates
+    delete updates.id
+    // run the update method
+    return ctx.db.mutation.updateItem(
+      {
+        data: updates,
+        where: {
+          id: args.id,
+        },
+      },
+      info
+    )
+  },
+}
+```
+
+Meanwhile, on the `frontend`...
+
+Make a new UpdateItem component. This will provide a form similar to the CreateItem component. The major differences being that we remove the upload file function and `<input type="file">`, while changing the `CREATE_ITEM_MUTATION` to an `UPDATE_ITEM_MUTATION`.
+
+```javascript
+const UpdateItem = ({ id }) => {
+  const [formState, setFormState] = useReducer(
+    (state, action) => ({ ...state, ...action }),
+    // recall we send our formState as variables to our mutation, so for
+    // updating, by default we send an empty object.
+    {}
+  )
+
+  // new single item query, so we know which item to update
+  const {
+    loading: singleItemLoading,
+    error: singleItemError,
+    data: singleItemData,
+  } = useQuery(SINGLE_ITEM_QUERY, {
+    variables: { id },
+  })
+
+  // new update item mutation
+  const [
+    updateItem,
+    {
+      loading: updateItemLoading,
+      error: updateItemError,
+      data: updateItemData,
+    },
+  ] = useMutation(UPDATE_ITEM_MUTATION, {
+    variables: { formState },
+  })
+
+  const handleChange = e => {
+    /* input change handler*/
+  }
+
+  if (!singleItemData) return <p>No item found for id: {id}</p>
+  if (singleItemLoading) return <p>Loading...</p>
+
+  return (
+    <Form onSubmit={handleSubmit}>
+      {/* error handling and conditional render logic becomes much easier to read with hooks */}
+      {updateItemError ? <Error error={updateItemError} /> : null}
+      {/* form body*/}
+    </Form>
+  )
+}
+```
+
+Set defaultValue of each input to `singleItemData.item.propertyName`. This will allow the user to view the current value for each field instead of a blank form.
+
+#### Read - useQuery to Read Items
+
+The basic formula is as follows:
+
+Write a Query using `graphql-tag`'s `gql` function. `gql` wraps a javascript string, and translates it into GraphQL(remember that's Graph Query **Language**) using an AST[^1]. Then pass that `gql` query into Apollo Client's `useQuery` hook, and return different markup from your component based on whether the resulting payload contains `loading`, `error`, or `data`.
+
+###### Querying for All Items
+
+1. Define the Query
+
+```javascript
+export const ALL_ITEMS_QUERY = gql`
+  query ALL_ITEMS_QUERY {
+    items {
+      id
+      title
+      price
+      description
+      image
+      largeImage
+    }
+  }
+`
+```
+
+2. Pass that `ALL_ITEMS_QUERY` to Apollo Client's `useQuery` hook, and use ES6 destructuring to get the `loading`, `error`, and `data` properties from the resulting payload.
+
+```javascript
+const { loading, error, data } = useQuery(ALL_ITEMS_QUERY)
+```
+
+3. Return different HTML based on whether the payload has returned a **loading**, **error**, or **data** object.
+
+```javascript
+const Items = () => {
+  const { loading, error, data } = useQuery(ALL_ITEMS_QUERY)
+  if (loading) return <div>Loading...</div>
+  if (error) return <div>{error.message}</div>
+  console.log(data)
+  return (
+    <Center>
+      <p>Items</p>
+      <p>It worked {data.items.length} items found!</p>
+      <ItemsList>
+        {data.items.map(item => (
+          <Item item={item} key={item.id} />
+        ))}
+      </ItemsList>
+    </Center>
+  )
+}
+```
+
+###### Querying for a Single Item
+
+Querying for a single item works similarly to querying for all items. The key difference is that we need to pass the `id` of the item we want to query.
+
+In our schema definition:
+
+```graphql
+type Query {
+  # all items query was here
+  item(where: ItemWhereUniqueInput!): Item
+}
+```
+
+In our resolver, we still use the `forwardTo` function from `prisma-binding`.
+
+On the frontend, our `SINGLE_ITEM_QUERY` takes an `id` as a variable, passes that `id` to our GraphQL Query as part of the `where` object, and returns the id, title, description, and largeImage fields for that item. To create the UI, we use those fields in our `SingleItem` component.
+
+```javascript
+export const SINGLE_ITEM_QUERY = gql`
+  query SINGLE_ITEM_QUERY($id: ID!) {
+    item(where: { id: $id }) {
+      id
+      title
+      description
+      largeImage
+    }
+  }
+`
+
+const SingleItem = ({ id }) => {
+  const { loading, error, data } = useQuery(SINGLE_ITEM_QUERY, {
+    variables: { id },
+  })
+  // handle loading & error states, and return some JSX when data comes back
+}
+```
+
+#### Destroy - useMutation to Destroy/Delete Items
+
+Write Delete Mutation on the backend
+
+Add `deleteItem` to our schema's Mutation type:
+
+```graphql
+type Mutation {
+  # createItem, and updateItem are up here
+  deleteItem(id: ID!): Item!
+}
+```
+
+Write a resolver for `deleteItem` in `/backend/src/resolvers/Mutation.js`:
+
+```javascript
+deleteItem: async (parent, args, ctx, info) => {
+  const where = { id: args.id }
+  // find the item
+  const item = ctx.db.query.item({ where }, `{id title}`)
+  // TODO check if they own the item or have delete permissions
+  // delete the item
+  return ctx.db.mutation.deleteItem({ where }, info)
+}
+```
+
+###### Updating the UI after a Mutation
+
+When we execute our mutation here, we are modifying backend data. However, because we need the UI to update as well, we need to update our ApolloClient cache. To be a bit more specific, we don't need to update the cache manually if we're _updating_ a _single_ item/entry. However for _multiple_ item, batch updates and delete operations, we do need to update the cache manually. See [Apollo Documentation on Updating the Cache After a Mutation](https://www.apollographql.com/docs/react/data/mutations/#updating-the-cache-after-a-mutation) for more detail.
+
+ApolloClient provides an `update` function, which allows us to perform UI update the cache(and consequently, our UI) or take actions after a GraphQL Mutation is complete. We use the `update` function by listing it in our `useMuation` options.
+
+> The update function takes two parameters. The first parameter, `cache`, is a representation of our Apollo Client cache, The second, `payload`, is an object carrying the result of our mutation, including `loading`, `error`, and `data`, if they exist. In the body of the update function, we'll execute `cache.readQuery` and `cache.writeQuery` methods to update our cache.
+
+Below is an example of `update` in action.
+
+```javascript
+// define our update function
+const update = (cache, payload) => {
+  // manually update the cache on the client so it matches the server
+  const data = cache.readQuery({ query: ALL_ITEMS_QUERY })
+  data.items = data.items.filter(item => item.id !== payload.data.deleteItem.id)
+  // put the items back
+  cache.writeQuery({ query: ALL_ITEMS_QUERY, data })
+}
+
+const [
+  deleteItem,
+  { loading: deleteItemLoading, error: deleteItemError, data: deleteItemData },
+] = useMutation(DELETE_ITEM_MUTATION, {
+  variables: { id },
+  // pass update as a part of our useMuation options
+  update,
+})
+```
+
+Note for clarity: We use ES6 [Shorthand Property Names](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Object_initializer) to assign the value of our `update` function to the `update` property in our useMutation options.
+
+## Pagination
+
+Total Items in DB
+number of items on current packages
+
+Prisma gives us `Connection` type which returns aggregate data about a given field or type. Connections expose `edges`, `pageInfo`, and `aggregate`. `edges` and `pageInfo` are useful for inifite scroll. `aggregate` is useful for manually implementing functionality based on aggregate info.
+
+###### Cache Invalidation
+
+If items are added or deleted, via our mutations, the values update on the backend, but the our cache, the store for our frontend data, becomes out-of-sync.
+
+Delete some items from the cache as a result. Check if this is solved in current versions of Apollo.
+
+> This is being tracked by Apollo in an umbrella issue: https://github.com/apollographql/apollo-feature-requests/issues/4
+
+[^1]: Check out this Medium article to learn about ASTs.: https://medium.com/basecs/leveling-up-ones-parsing-game-with-asts-d7a6fc2400ff

@@ -1,0 +1,58 @@
+#### Destroy - useMutation to Destroy/Delete Items
+
+Write Delete Mutation on the backend
+
+Add `deleteItem` to our schema's Mutation type:
+
+```graphql
+type Mutation {
+  # createItem, and updateItem are up here
+  deleteItem(id: ID!): Item!
+}
+```
+
+Write a resolver for `deleteItem` in `/backend/src/resolvers/Mutation.js`:
+
+```javascript
+deleteItem: async (parent, args, ctx, info) => {
+  const where = { id: args.id }
+
+  // find the item
+  const item = ctx.db.query.item({ where }, `{id title}`)
+  // check if they own the item or have delete permissions
+  // delete the item
+  return ctx.db.mutation.deleteItem({ where }, info)
+}
+```
+
+###### Updating the UI after a Mutation
+
+When we execute our mutation here, we are modifying backend data. However, because we need the UI to update as well, we need to update our ApolloClient cache. To be a bit more specific, we don't need to update the cache manually if we're _updating_ a _single_ item/entry. However for _multiple_ item, batch updates and delete operations, we do need to update the cache manually. See [Apollo Documentation on Updating the Cache After a Mutation](https://www.apollographql.com/docs/react/data/mutations/#updating-the-cache-after-a-mutation) for more detail.
+
+ApolloClient provides an `update` function, which allows us to perform UI update the cache(and consequently, our UI) or take actions after a GraphQL Mutation is complete. We use the `update` function by listing it in our `useMuation` options.
+
+The update function takes two parameters. The first parameter, `cache`, is a representation of our Apollo Client cache, The second, `payload`, is an object carrying the result of our mutation, including `loading`, `error`, and `data`, if they exist. In the body of the update function, we'll execute `cache.readQuery` and `cache.writeQuery` methods to update our cache.
+
+Below is an example of `update` in action.
+
+```javascript
+// define our update function
+const update = (cache, payload) => {
+  // manually update the cache on the client so it matches the server
+  const data = cache.readQuery({ query: ALL_ITEMS_QUERY })
+  data.items = data.items.filter(item => item.id !== payload.data.deleteItem.id)
+  // put the items back
+  cache.writeQuery({ query: ALL_ITEMS_QUERY, data })
+}
+
+const [
+  deleteItem,
+  { loading: deleteItemLoading, error: deleteItemError, data: deleteItemData },
+] = useMutation(DELETE_ITEM_MUTATION, {
+  variables: { id },
+  // pass update as a part of our useMuation options
+  update,
+})
+```
+
+Note for clarity: We use ES6 [Shorthand Property Names](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Object_initializer) to assign the value of our `update` function to the `update` property in our useMutation options.
