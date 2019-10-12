@@ -1,0 +1,179 @@
+# Accounts, Authorization, and Permissions
+
+## Creating Users
+
+enums are useful in GraphQL when something's type can be one of many distinct values.
+
+add some fields to the user type
+
+create Permission enum
+
+```
+enum Permission {
+  ADMIN
+  USER
+  ITEMCREATE
+  ITEMUPDATE
+  ITEMDELETE
+  PERMISSIONUPDATE
+}
+
+type User {
+  id: ID!
+  name: String!
+  email: String! @unique
+  password: String
+  resetToken: String
+  resetTokenExpiry: String
+  permissions: [Permission]
+}
+```
+
+Create the signup Mutation in our schema
+
+```
+type Mutation {
+  # our schema is growing. createItem, updateItem, and deleteItem are up here
+  signup(email: String!, password: String!, name: String!): User!
+}
+```
+
+The `signup` resolver is where we will perform password encryption, add the User to the database, create and sign the JWT, and send it in our response as a part of `ctx.response.cookie`.
+
+> We're storing JWTs in cookies here. Should double check hasura blog to make sure this is secure. Regardless, dealing with JWTs requires some changes to our `backend/index.js`.
+
+Here's the signup function from `resolvers/Mutation.js`
+
+```javascript
+signup: async (parent, args, ctx, info) => {
+  args.email = args.email.toLowerCase()
+  // hash the password
+  const password = await bcrypt.hash(args.password, 10)
+  // create the user in the database
+  const user = await ctx.db.mutation.createUser(
+    {
+      data: {
+        ...args,
+        password,
+        // set permissions
+        permissions: { set: ["USER"] },
+      },
+    },
+    info
+  )
+  // create the JWT
+  const token = jwt.sign({ userId: user.id }, process.env.APP_SECRET)
+  ctx.response.cookie("token", token, {
+    httpOnly: true,
+    maxAge: 1000 * 60 * 60 * 24 * 365, // 1 year cookie
+  })
+  // return user to the browser
+  return user
+}
+```
+
+- Use `bcrypt` to perform one-way hashing of passwords.
+- JWTs have to have a secret passed to them
+- Our cookie is set to have a 1 year lifespan, however JWTs should have 15-min lifespan. Should check how to accomplish this.
+
+Frontend `signup` uses a `<form>`. The form has 3 controlled inputs `name`, `email`, and `password` fields that share an event handler using ES6 Computed Property names similar to the Item Creation and Item Update forms. The main differences are:
+
+1. The `<form method="post"`, this prevents the password from showing up in the URL as it does in GET requests.
+2. The `handleSubmit` function clears the `formState`
+
+Here's the `signup` Mutation:
+
+```javascript
+const SIGNUP_MUTATION = gql`
+  mutation SIGNUP_MUTATION(
+    $email: String!
+    $name: String!
+    $password: String!
+  ) {
+    signup(email: $email, name: $name, password: $password) {
+      id
+      email
+      name
+      password
+    }
+  }
+`
+```
+
+---
+
+## Display the Logged In User
+
+1. Send JWT with each request
+2. Decode JWT on backend
+3. Add the `userId` to every request
+
+We've created the user and sent a JWT back to the client as a part of our response. Now, we have to write server logic that checks our `cookies` for a `token` key, and verifies the `userId` if one is present:
+
+```javascript src/index.js
+server.express.use((req, res, next) => {
+  const { token } = req.cookies
+  if (token) {
+    const { userId } = jwt.verify(token, process.env.APP_SECRET)
+    // add userId to req for further requests to access
+    req.userId = userId
+  }
+  next()
+})
+```
+
+GraphQL Query for current User - `src/schema.graphql`
+
+```
+type Query {
+  # item, item, itemsConnection ...
+  me: User
+}
+```
+
+```javascript
+const Query = {
+  // item resolvers up here
+  me: (parent, args, ctx, info) => {
+    // check if there is a current userId
+    if (!ctx.request.userId) return null
+    return ctx.db.query.user(
+      {
+        where: { id: ctx.request.userId },
+      },
+      info
+    )
+  },
+}
+```
+
+Now that we've set up our GraphQL Query and Resolver on the backend, we can `useQuery` on the frontend to display that data in our Navbar:
+
+```javascript
+const Nav = () => {
+  const {
+    loading: currentUserLoading,
+    error: currentUserError,
+    data: currentUserData,
+  } = useQuery(CURRENT_USER_QUERY)
+  return (
+    <NavStyles>
+      {currentUserData ? <p>{currentUserData.me.name}</p> : null}
+      {/* More Nav stuff going on down here */}
+    </NavStyles>
+  )
+}
+```
+
+## Sign In + Custom Error Handling
+
+- Use `refetchQueries` option on `useMutation` to have an immediate UI change after signing in.
+
+```javascript
+const [signin, { error, loading }] = useMutation(SIGNIN_MUTATION, {
+  variables: formState,
+  refetchQueries: [CURRENT_USER_QUERY],
+})
+```
+
+## Sign Out Users
