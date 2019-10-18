@@ -1,0 +1,84 @@
+# Building a Shopping Cart
+
+- `<Cart />` Component
+  - `<header>`
+    - Button for closing
+    - Your Cart
+    - Display number of items in Cart
+  - `<footer>`
+    - Button for checkout
+    - Display Total
+
+```javascript
+const Cart = () => {
+  return (
+    <CartStyles open={true}>
+      <header>
+        <CloseButton title="close">&times;</CloseButton>
+        <Supreme>Your Cart</Supreme>
+        <p>You Have __ Items in your cart.</p>
+      </header>
+
+      <footer>
+        <p>$10.10</p>
+        <SickButton>Checkout</SickButton>
+      </footer>
+    </CartStyles>
+  )
+}
+```
+
+## Apollo Local State
+
+The `ApolloClient` constructor exposes an property called `clientState`. The `clientState` property allows us to provide a list of client-side resolvers. Client-side resolvers do not send requests to the server, but instead resolve in the browser or applicable client-side environment.
+
+`clientState` takes two properties that will be useful to us right now, `resolvers`, and `defaults`. The `resolvers` property has optional `Mutation`, `Query`, and `Subscription` properties, and provide instructions on actions to perform when a given `Query` or `Mutation` has been launched. The `defaults` property allows us to express the default value of any variables we will be adding to local state.
+
+**The @client query**
+
+```javascript
+export const LOCAL_STATE_QUERY = gql`
+  query {
+    cartOpen @client
+  }
+`
+
+export const TOGGLE_CART_MUTATION = gql`
+  mutation {
+    toggleCart @client
+  }
+`
+```
+
+```javascript withData.js
+function createClient({ headaers }) {
+  return new ApolloClient({
+    uri: endpoint, // direct to your endpoints ,
+    request: () => {}, // some function
+    clientState: {
+      resolvers: {
+        Mutation: {
+          toggleCart(_, variables, { cache }) {
+            // read the cartOpen value from the cache
+            const { cartOpen } = cache.readQuery({
+              query: LOCAL_STATE_QUERY,
+            })
+
+            const data = {
+              data: {
+                cartOpen: !cartOpen,
+              },
+            }
+            // set cartOpen to opposite vale
+            cache.writeData(data)
+            return data
+          },
+        },
+      },
+      defaults: {
+        cartOpen: true,
+      },
+    },
+  })
+}
+```
