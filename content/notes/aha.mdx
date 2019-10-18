@@ -1,0 +1,37 @@
+# AHA Programming References
+
+[Concactenate Conf Talk by Kent C. Dodds](https://youtu.be/-Ez53J0vj9c?t=18077)
+[Aha Testing Blog Post by Kent C. Dodds](https://kentcdodds.com/blog/aha-programming)
+[The Wrong Abstraction Blog Post by Sandi Metz](https://www.sandimetz.com/blog/2016/1/20/the-wrong-abstraction) - Kent Credits this blog post as the source material for his talk
+[A Render Prop by Any Other Name Talk by Kent C Dodds, Dovya Sasidharan, and Isaac Mann](https://www.youtube.com/watch?v=pjDOJdMM2eg) - Kent references this talk while answering an audience question at Concactenate Conf talk. The talk was given at Framework Summit in November 2018. It features Kent C. Dodds(React Developer), Divya Sasidharan(Vue Developer), and Isaac Mann(Angular Developer) talking about implementing composable components across frameworks.
+
+1. Where do you split it apart?
+
+- - UI - Displaying State
+- - Logic - Changing State
+- - Data - Fetching and Storing State
+
+2. How do you put it back together
+
+**Divya Sasidharan** - Display
+_Render Props_ - Component that takes a prop telling it what to render
+_Prop Getters_ - a pattern that allows encapsulation of behavior
+
+**Kent C. Dodds** - Behavior
+_State Reducers_ - Logic Flexibility
+The Tale:
+
+- Start w/ Accordian Component
+- Only want to be allowed to open one at a time
+- Can open many, but can close all except one
+- We want to do both, Only open one at a time & not close the one that's open
+
+This is similar to a Tabs UI, which brings us to _State Reducers_
+
+- pass state reducer prop: Function, to a component. It accepts the state and the changes.
+
+**Isaac Mann** - Data
+_Provider Pattern_ (Storing State) - solution to prop drilling
+
+- Provider at the top of tree - Keeps state
+- Consumer lower in the tree - Listens to state changes
