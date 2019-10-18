@@ -2,11 +2,10 @@
 
 ## Creating Users
 
-enums are useful in GraphQL when something's type can be one of many distinct values.
+- enums are useful in GraphQL when something's type can be one of many distinct values.
 
-add some fields to the user type
-
-create Permission enum
+1. add `password`, `resetToken`, `resetTokenExpiry`, and `permissions` fields to the user type
+2. create Permission enum
 
 ```
 enum Permission {
@@ -29,7 +28,7 @@ type User {
 }
 ```
 
-Create the signup Mutation in our schema
+Create the `signup` Mutation in our schema.
 
 ```
 type Mutation {
@@ -42,7 +41,11 @@ The `signup` resolver is where we will perform password encryption, add the User
 
 > We're storing JWTs in cookies here. Should double check hasura blog to make sure this is secure. Regardless, dealing with JWTs requires some changes to our `backend/index.js`.
 
-Here's the signup function from `resolvers/Mutation.js`
+Here's the signup resolver from `resolvers/Mutation.js`. In the resolver we:
+
+- Use `bcrypt` to perform one-way hashing of passwords.
+- Pass a secret password to JWTs. We use that `APP_SECRET` to sign the JWT
+- Our cookie is set to have a 1 year lifespan, however JWTs should have 15-min lifespan. Should check how to accomplish this.
 
 ```javascript
 signup: async (parent, args, ctx, info) => {
@@ -72,32 +75,76 @@ signup: async (parent, args, ctx, info) => {
 }
 ```
 
-- Use `bcrypt` to perform one-way hashing of passwords.
-- JWTs have to have a secret passed to them
-- Our cookie is set to have a 1 year lifespan, however JWTs should have 15-min lifespan. Should check how to accomplish this.
+On the frontend, we call the `signup` using a `<form>`. That `<form>` has 3 controlled inputs `name`, `email`, and `password`. Those inputs that share an event handler, in which we use ES6 Computed Property names similar to the Item Creation and Item Update forms. The main differences are:
 
-Frontend `signup` uses a `<form>`. The form has 3 controlled inputs `name`, `email`, and `password` fields that share an event handler using ES6 Computed Property names similar to the Item Creation and Item Update forms. The main differences are:
+1. The `<form method="post"`. Setting the `<form>`'s method to `POST` prevents the password from showing up in the URL.
+2. The `handleSubmit` performs only one action. It calls `signup()`;
+3. We pass a `refetchQueries` option to our `useMutation` hook. So the UI updates to reflect the fact that we have a user logged in
 
-1. The `<form method="post"`, this prevents the password from showing up in the URL as it does in GET requests.
-2. The `handleSubmit` function clears the `formState`
-
-Here's the `signup` Mutation:
+What we described above, ends up looking like this:
 
 ```javascript
-const SIGNUP_MUTATION = gql`
-  mutation SIGNUP_MUTATION(
-    $email: String!
-    $name: String!
-    $password: String!
-  ) {
-    signup(email: $email, name: $name, password: $password) {
-      id
-      email
-      name
-      password
-    }
+const SignupForm = () => {
+  const [formState, setFormState] = React.useState({
+    name: "",
+    email: "",
+    password: "",
+  })
+
+  const handleChange = e => {
+    setFormState({
+      ...formState,
+      [e.target.name]: e.target.value,
+    })
   }
-`
+
+  const [signup, { error, loading }] = useMutation(SIGNUP_MUTATION, {
+    variables: formState,
+    refetchQueries: [{ query: CURRENT_USER_QUERY }],
+  })
+
+  const handleSubmit = async e => {
+    e.preventDefault()
+    signup()
+  }
+
+  return (
+    <Form method="post" onSubmit={handleSubmit}>
+      <fieldset disabled={loading} aria-busy={loading}>
+        <h2>Sign Up for An Account</h2>
+        <Error error={error} />
+        <label htmlFor="email">
+          Email
+          <input
+            type="text"
+            name="email"
+            placeholder="Email"
+            onChange={handleChange}
+          />
+        </label>
+        <label htmlFor="name">
+          Name
+          <input
+            type="text"
+            name="name"
+            placeholder="Name"
+            onChange={handleChange}
+          />
+        </label>
+        <label htmlFor="password">
+          Password
+          <input
+            type="password"
+            name="password"
+            placeholder="password"
+            onChange={handleChange}
+          />
+        </label>
+        <button>Sign Up</button>
+      </fieldset>
+    </Form>
+  )
+}
 ```
 
 ---
@@ -172,8 +219,359 @@ const Nav = () => {
 ```javascript
 const [signin, { error, loading }] = useMutation(SIGNIN_MUTATION, {
   variables: formState,
-  refetchQueries: [CURRENT_USER_QUERY],
+  refetchQueries: [{ query: CURRENT_USER_QUERY }],
 })
 ```
 
-## Sign Out Users
+## Signout
+
+The signout mutation does not NEED to return anything. However, it can often be helpful to return a simple message that lets us know the mutation succeeded.
+
+Here's a look at the schema changes we'll make to facilitate signout:
+
+```
+type SuccessMessage {
+  message: String
+}
+
+type Mutation {
+  # ...
+  signout: SuccessMessage
+}
+```
+
+Here's our `signout` resolver. in `/resolvers/Mutation.js:
+
+```javascript
+const Mutations = {
+  signout: async (parent, args, ctx, info) => {
+    ctx.response.clearCookie("token")
+    return { message: "googbye" }
+  },
+}
+```
+
+On the `frontend`, we want to trigger the `signout` mutation when we click a `button` with the text signout. Then, we will refetch the `CURRENT_USER_QUERY`, so our UI updates.
+
+```javascript
+export const SIGNOUT_MUTATION = gql`
+  mutation SIGNOUT_MUTATION {
+    signout {
+      message
+    }
+  }
+`
+
+const Signout = props => {
+  const [signout] = useMutation(SIGNOUT_MUTATION, {
+    refetchQueries: [{ query: CURRENT_USER_QUERY }],
+  })
+  return <button onClick={signout}>Sign Out</button>
+}
+```
+
+## Reset Password
+
+#### Reset Password - Backend
+
+#### Reset Password - Frontend
+
+## Sending Email
+
+- using [Mailtrap](https://mailtrap.io/) as a test STMP, to verify emails are sent and actionable
+- Using a library called [`nodemailer`](https://nodemailer.com/about/) to send emails in `requestReset` Mutation resolver
+
+new requestReset Mutation now includes:
+
+```javascript
+const mailResponse = await transport.sendMail({
+  from: "dontedhightower@gmail.com",
+  to: user.email,
+  subject: "Your Password Reset Token",
+  html: makeANiceEmail(
+    `Your password reset token is here \n\n <a href="${proccess.env.FRONTEND_URL}/reset?resetToken=${resetToken}">Click Here to Reset</a>`
+  ),
+})
+```
+
+Here's the full resolver:
+
+```javascript
+  requestReset: async (parent, args, ctx, info) => {
+    // check if this is a real user
+    const user = await ctx.db.query.user({ where: { email: args.email } });
+    if (!user) throw new Error(`No such user found for email ${args.email}`);
+    // set a reset token and expiry on that user
+    const resetToken = (await promisify(randomBytes)(20)).toString('hex');
+    const resetTokenExpiry = Date.now() + 3600000; // 1 hour from now
+    const res = await ctx.db.mutation.updateUser({
+      where: { email: args.email },
+      data: { resetToken, resetTokenExpiry }
+    });
+    // email them the reset token
+    const mailResponse = await transport.sendMail({
+      from: 'dontedhightower@gmail.com',
+      to: user.email,
+      subject: 'Your Password Reset Token',
+      html: makeANiceEmail(
+        `Your password reset token is here \n\n <a href="${proccess.env.FRONTEND_URL}/reset?resetToken=${resetToken}">Click Here to Reset</a>`
+      )
+    });
+
+    // return the message
+    return { message: 'Your password reset email is on its way.' };
+  },
+```
+
+## Data Relationships
+
+To create a data relationship in GraphQL, add a field to one type that returns another type. In the example below, we establish a relationship between the `Item` type and the `User` type such that every `Item` has an associated `User`. Once we create the relationship between `Item`s and `User`s in our schema, we can enforce that relationship in our `createItem` resolver by throwing an `Error` any time `createItem` is called without a logged in `User`.
+
+```
+type User {
+  id: ID! @id
+  name: String!
+  email: String! @unique
+  password: String
+  resetToken: String
+  resetTokenExpiry: String
+  permissions: [Permission] @scalarList(strategy: RELATION)
+  updatedAt: DateTime! @updatedAt
+  createdAt: DateTime! @createdAt
+}
+
+type Item {
+  id: ID! @id
+  title: String!
+  description: String!
+  image: String
+  largeImage: String
+  price: Int!
+  user: User!
+  createdAt: DateTime! @createdAt
+  updatedAt: DateTime! @updatedAt
+}
+```
+
+```javascript
+const Mutations = {
+  createItem: async (parent, args, ctx, info) => {
+    if (!ctx.request.userId) {
+      throw new Error(`You must be logged in to do that.`)
+    }
+    const item = await ctx.db.mutation.createItem(
+      {
+        data: {
+          user: {
+            // this is how we create a relationship between the item and the user
+            connect: {
+              id: ctx.request.userId,
+            },
+          },
+          ...args,
+        },
+      },
+      info
+    )
+    return item
+  },
+}
+```
+
+#### Create a Gated Sign-In Component
+
+1. Create a component called `PleaseSignIn`
+2. Wrap the `CreateItem` component in `PleaseSignIn`
+3. Handle render logic and `useQuery` fetching in `PleaseSignIn`
+   -- if loading
+   -- if error
+   -- if `!data.me` return `<SignInForm />`
+   -- otherwise, return { children }
+
+Here's Step 2 in Action
+
+```javascript
+const Sell = () => {
+  return (
+    <div>
+      <PleaseSignIn>
+        <CreateItem />
+      </PleaseSignIn>
+    </div>
+  )
+}
+```
+
+Here's Step 3 in action:
+
+```javascript
+const PleaseSignIn = ({ children }) => {
+  const { loading, error, data } = useQuery(CURRENT_USER_QUERY)
+
+  if (loading) return <p>Loading...</p>
+  if (error) return <Error error={error} />
+  if (!data.me) {
+    return (
+      <div>
+        <p>Please Sign In before Continuing</p>
+        <SigninForm />
+      </div>
+    )
+  }
+  return children
+}
+```
+
+## Permissions Management
+
+1. Create `users` query in datamodel
+2. Create `users` resolver
+3. Create `PermssionsTable` component and `permsssions` page
+
+**`PermissionTable` Contains**
+
+- `ALL_USERS_QUERY` - queries for users, in the resolver we only allow the query to resolve if a `user.permissions.includes('ADMIN')`
+  - returns `user.id`, `user.name`, `user.email` & `user.permissions`
+- `PermssionsTable` - a styled `<Table>` component that returns `name` & `email` columns, as well as a column for each `possiblePermission`
+- `<User />` component - takes in a `user` prop, and returns a `<tr>`
+  - that `<tr>` has a `<td>` for `user.name`
+  - a `<td>` for `user.email`
+  - a `<td><input type="checkbox" /></td>` for each possible permission _(6 total)_
+
+#### Updating Permissions in Local State
+
+- Set PropTypes for `<User />`
+- Make the inputs work
+- `UPDATE_PERMISSIONS_MUTATION`
+
+```javascript
+const UPDATE_PERMISSIONS_MUTATION = gql`
+  mutation updatePermissions($permissions: [Permission], $userId: ID!) {
+    updatePermissions(permissions: $permissions, userId: $userId) {
+      id
+      permissions
+      name
+      email
+    }
+  }
+`
+```
+
+```javascript
+const User = ({ user }) => {
+  const [permissions, setPermissions] = React.useState(user.permissions)
+
+  const handlePermissionChange = e => {
+    const checkbox = e.target
+    if (checkbox.checked) {
+      setPermissions([...permissions, checkbox.value])
+    } else {
+      setPermissions(
+        permissions.filter(permission => permission != checkbox.value)
+      )
+    }
+  }
+
+  return (
+    <tr>
+      <td>{user.name}</td>
+      <td>{user.email}</td>
+      {possiblePermissions.map(permission => (
+        <td key={`${user.id}-permission-${permission}`}>
+          <label htmlFor={`${user.id}-permission-${permission}`}>
+            <input
+              id={`${user.id}-permission-${permission}`}
+              type="checkbox"
+              value={permission}
+              checked={permissions.includes(permission)}
+              onChange={handlePermissionChange}
+            />
+          </label>
+        </td>
+      ))}
+      <td>
+        <SickButton>Update</SickButton>
+      </td>
+    </tr>
+  )
+}
+
+User.propTypes = {
+  user: PropTypes.shape({
+    name: PropTypes.string,
+    email: PropTypes.string,
+    id: PropTypes.string,
+    permissions: PropTypes.array,
+  }).isRequired,
+}
+```
+
+#### Updating Permissions on the Server
+
+1. Create `updatePermissions` in our schema
+2. Write the resolver
+
+```javascript
+const Mutations = {
+  updatePermissions: async (parent, args, ctx, info) => {
+    // check if logged in
+    if (!ctx.request.userId) throw new Error(`You must be logged in!`)
+    // query current user
+    const currentUser = await ctx.db.query.user(
+      {
+        where: { id: ctx.request.userId },
+      },
+      info
+    )
+    // check if they have permissions to do this
+    hasPermission(currentUser, ["ADMIN", "PERMISSIONUPDATE"])
+    // update the permissions
+    return ctx.db.mutation.updateUser(
+      {
+        data: {
+          permissions: {
+            set: args.permissions,
+          },
+        },
+        where: {
+          id: args.userId,
+        },
+      },
+      info
+    )
+  },
+}
+```
+
+#### Locking Down DeleteItem Permissions
+
+- DeleteItem should only be allowed for:
+  - `user` who created the item
+    - `const ownsItem = item.user.id === ctx.request.userId`
+  - `user` with `ITEMDELETE` permission
+  - `user` with `ADMIN` permission
+    - `const hasPermission = ctx.request.user.permissions.some(permission => ['ITEMDELETE, ADMIN'].includes(permission));`
+
+We can acheive this by updating the `deleteItem` resolver to include those checks:
+
+```javascript
+const Mutations = {
+  // ...
+  deleteItem: async (parent, args, ctx, info) => {
+    const where = { id: args.id }
+    // find the item
+    const item = await ctx.db.query.item({ where }, `{id title user { id }}`)
+    // check if they own the item or have delete permissions
+    const ownsItem = item.user.id === ctx.request.userId
+    // if one of the items in the array is in user.permissions, return true
+    const hasPermissions = ctx.request.user.permissions.some(permission =>
+      ["ADMIN", "ITEMDELETE"].includes(permission)
+    )
+    if (!ownsItem && !hasPermissions)
+      throw new Error(`You don't have permission to do that`)
+    // delete the item
+    return ctx.db.mutation.deleteItem({ where }, info)
+  },
+  // ...
+}
+```
