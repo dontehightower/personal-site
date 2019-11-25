@@ -1,0 +1,216 @@
+# Typescript
+
+### Sources
+
+-[Typescript Generics Explained](https://medium.com/@rossbulat/typescript-generics-explained-15c6493b510f)
+
+### Definitions
+
+- Type annotations: Code written by a developer that tells Typescript what type of value a variable will refer to.
+- Type inference: Typescript tries to figure out what type of value a variable refers to.
+
+### Annotations
+
+#### Variables
+
+```typescript
+let apples: number = 5 // number
+let speed: string = "fast" // string
+let hasName: boolean = true // boolean
+
+let nothingMuch: null = null // null
+let nothing: undefined = undefined // undefined
+
+// built in objects
+let now: Date = new Date()
+```
+
+annotations can be used for every _primitive type_. Primitive types are:
+
+- number
+- boolean
+- void
+- undefined
+- string
+- symbol
+- null
+
+#### Object Literal annotations
+
+#### Type Inference Rule
+
+If variable declaration and variable initialization are performed on the same line, TypeScript will use the type of the initialized value to _infer_ the type of that variables
+
+#### When to use Type Inference vs Type Annotations
+
+Use type annotations in three scenarios:
+
+1. When a Function returns an `any` type.
+2. When declaring a variable on one line and initializing it later
+3. Type cannot be inferred correctly
+
+#### Type Annotations & Type Inferences in Functions
+
+When writing functions in TypeScript, annotation and inference behavior may not work exactly as expected. TypeScript will only infer the return value of a function. It will not infer the types of a functions parameters. Because of this, we should annotate function parameter and return values.
+
+Annotating Functional Expressions
+
+```typescript
+const add = (a: number, b: number): number => {
+  return a + b
+}
+```
+
+Function Declarations
+
+```typescript
+function divide(a: number, b: number): number {
+  return a / b
+}
+```
+
+Anonymous Functions
+
+```typescript
+function multiply = function(a: number, b: number): number {
+  return a * b;
+}
+```
+
+If a function does not return a value, use the void keyword
+
+```typescript
+const logger = (message: string): void => {
+  console.log(message)
+}
+```
+
+If a function is never expected to return anything use the never keyword
+
+```typescript
+const throwError = (message: string): never => {
+  throw new Error(message)
+}
+```
+
+Destructuring with annotations follow the following pattern:
+`({ destructured, parameters}: {type1: Date, type: string}): void =>`
+
+```typescript
+const logWeather = ({
+  date,
+  weather,
+}: {
+  date: Date
+  weather: string
+}): void => {
+  console.log(forecast.date)
+  console.log(forecast.weather)
+}
+```
+
+#### Arrays
+
+TypeScript arrays are useful any time we need to represent a collection of records.
+TS can perform type inference when extracting a value from an array.
+
+Arrays where each element is some consistent type of value.
+
+```typescript
+const carMakers = ["ford", "toyota", "chevy"]
+```
+
+We can also annotate the values expected in an array.
+
+```typescript
+const carMakers: string[] = ["ford", "toyota", "chevy"]
+```
+
+Annotations are particularly useful when initializing an empty array.
+
+```typescript
+const carMakers: string = [] // values placed in this array should be strings
+```
+
+TS can perform type inference when extracting a value from an array. TS helps developers avoid placing incompatable values in an array.
+
+```typescript
+const carMakers: string[] = ["ford", "toyota", "chevy"]
+const car = carMakers[0] // ts infers this value will be a string
+carMakers.push(100) // "Argument of type '100' is not assignable to parameter of type string"
+```
+
+Special annotation can be used if we want to used a mix of types in an Arrays
+
+```typescript
+const importantDates: (Date | string)[] = [new Date(), "2018-19-02"]
+```
+
+#### Tuples
+
+Array-like structure where each element represents some property of a record.
+
+#### Interfaces
+
+Interfaces are a TypeScript type aimed
+
+#### Classes
+
+A class is a blueprint to create an object with fields(_properties_) and methods(_functions_) to represent an object. When creating a class, we don't call the methods defined inside of it directly, instead we define an instance of class using the `new` keyword;
+
+```typescript
+class Vehicle {
+  drive(): void {
+    console.log("chugga chugga")
+  }
+
+  honk(): void {
+    console.log("beep")
+  }
+}
+
+const vehicle = new Vehicle()
+vehicle.drive() // prints "chugga chugga"
+vehicle.honk() // prints "beep"
+```
+
+TypeScript classes are similar to ES6 classes, but the inheritence model is different.
+
+```typescript
+class Vehicle {
+  drive(): void {
+    console.log("chugga chugga")
+  }
+
+  honk(): void {
+    console.log("beep")
+  }
+}
+
+// Car has all the methods of vehicle
+
+// can optionally override methods on child classes
+class Car extends Vehicle {
+  drive(): void {
+    console.log("vroom")
+  }
+}
+
+const car = new Car()
+const vehicle = new Vehicle()
+vehicle.drive() // "chugga chugga"
+car.drive() // "vroom"
+```
+
+###### Instance and Method Modifiers
+
+One difference between ES6 JS classes and TS classes is the presence of instance and method Modifiers
+
+- *public* - default method. means a method can be called anywhere
+- *private* - this method can only be called by methods in the same class definition
+- *protected* - can only be called by instances of the class
+
+Cannot change method modifiers in child classes.
+
+A Method can be marked as private to restrict the ability of other developers to call that method.
+

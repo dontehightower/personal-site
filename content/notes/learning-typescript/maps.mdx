@@ -1,0 +1,50 @@
+# Maps
+
+The maps application will randomly generate a User and Company and place them on a map. Three classes:
+
+- Map
+- User
+- Company
+
+Bundled with parcel.
+
+Conevention: Any file who's primary purpose is to create and export a class, the file name will have a capital first letter.
+
+Fields will be initialized on the same line if using a hard-coded value.
+
+Import faker to generate user name, company name, company catchphrase and location
+
+---
+
+Importing faker caused an error: "could not find a declaration file for module faker".
+
+**Explanation of error:** When writing typescript, we are free to make use of JS Libraries. However, the TypeScript compiler does want to check the types being used from JS libraries. _Type definition files_ serve as adapters by providing type definitions for the methods and modules of common JS libraries. [`@types/faker`](https://www.npmjs.com/package/@types/faker) is the \_type definition file for the faker library.
+
+Generally when creating a class in a TypeScript file, we do not perform any application-level logic operations inside that file. We export it into another file and work with the class from there.
+
+TypeScript convention is not to use the `export default` statements. Instead, use named exports.
+
+---
+
+limiting access to class variables by wrapping `google.maps.Map` in a `CustomMap` class, and making the `googleMap` field `private`
+
+```typescript
+export class CustomMap {
+  private googleMap: google.maps.Map // note the 'private' modifier
+
+  constructor(divId: string) {
+    this.googleMap = new google.maps.Map(document.getElementById(divId), {
+      zoom: 1,
+      center: {
+        lat: 0,
+        lng: 0,
+      },
+    })
+  }
+  // ...
+}
+```
+
+---
+
+Implementing `addMarker`. Using TypeScript Interfaces to provide a layer of type-checking abstraction.
